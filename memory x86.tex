@@ -131,7 +131,7 @@ Trong protected mode, địa chỉ tồn tại dưới 3 dạng:
 
 Hai thành phần chính trong cơ chế phân đoạn của x86 là các thanh ghi segment 16 bit như cs (code segment), ds (data segment), ss (stack segment),... và bảng quản lý đoạn. Có hai bảng quản lý đoạn: Global Descriptor Table (GDT) và Local Descriptor Table (LDT), nằm trong bộ nhớ chính, địa chỉ của chúng được quản lý bởi hai thanh ghi gdtr và ldtr. Bit TI trong mỗi thanh ghi segment chỉ định bảng nào sẽ được lựa chọn, bằng 0 nếu như đang sử dụng GDT, bằng 1 là LDT. Phần index là chỉ số của phần tử tương ứng nằm trong bảng quản lý đoạn. 
 
-RPL: Requestor Privilege Level: Chỉ định mức độ đặc quyền hiện tại khi thanh ghi cs được nạp. 
+Các thanh ghi ss và ds có thể được load bởi code. Trên mỗi thanh ghi đó, giá trị RPL (Requestor Privilege Level) chỉ định mức độ đặc quyền yều cầu truy cập. Tuy nhiên, thanh ghi cs thì rất đặc biệt. Nó không thể được set bởi các instruction nạp dữ liệu như mov, mà chỉ có thể bị thay đổi bởi những instruction rẽ nhánh hoặc call. Một điều nữa, cs có \textbf{Current Privilege Level} (CPL) thay vì RPL được bản thân CPU kiểm soát, đặc trưng cho mức độ đặc quyền hiện tại của CPU. Nó chỉ bị thay đổi bởi các instruction đặc biệt như int (thực hiện ngắt mềm), iret (trả về từ hàm xử lý ngắt),... 
 
 Mỗi phần tử trong bảng quản lý đoạn có 8 byte, được chia thành nhiều trường như sau: 
 \begin{itemize}
@@ -212,16 +212,31 @@ Mục đích của việc sử dụng cơ chế phân trang 2 mức đó là là
 
 Địa chỉ vật lý của bảng thư mục trang được lưu trong thanh ghi cr3. Mỗi một phần tử trong bảng thư mục trang sẽ xác định địa chỉ vật lý của bảng trang. Tương tự, mỗi phần tử trong bảng trang sẽ xác định địa chỉ vật lý của khung trang tương ứng. Trường xác định bảng thư mục trang và bảng trang đều là 10 bit. Vì vậy nên số lượng phần tử lớn nhất trong mỗi bảng là 1024. Đồng thời kích thước của mỗi trang là 4KB.
 
-Mỗi một phần tử trong bảng thư mục trang và bảng trang là 32 bit. 20 bit cao để xác định địa chỉ vật lý của bảng trang (đối với bảng thư mục trang) hoặc địa chỉ vật lý của trang (đối với bảng trang). 12 bit thấp chứa các cờ sau: 
+Mỗi một phần tử trong bảng thư mục trang và bảng trang là 32 bit. 20 bit cao để xác định địa chỉ vật lý của bảng trang (đối với phần tử trong bảng thư mục trang) hoặc địa chỉ vật lý của trang (đối với phần tử bảng trang). 12 bit thấp chứa các cờ sau: \cite{paging}
 \begin{itemize}
 \item Present: Nếu nó bằng 1, trang đã nằm trong bộ nhớ (đối với bảng trang) hoặc bảng trang đã nằm trong bộ nhớ (đối với phần tử trong bảng thư mục trang); ngược lại, bằng 0 nếu nó không tồn tại trong bộ nhớ. Khi đó nếu truy cập đến page này sẽ gây ra một ngoại lệ có tên Page Fault. 
 \item Accessed: Được set giá trị 1 mỗi khi khối phân trang truy cập vào trang đó (đối với phần tử của bảng trang) hoặc mỗi khi truy cập bảng trang (đối với phần tử của bảng thư mục trang).
 \item Dirty: Chỉ có trên bảng trang. Nó được set bằng 1 mỗi khi có phép toán ghi xảy ra lên trang đó. 
+\item Cache Disabled: Nếu nó bằng 1, trang đó sẽ không được cache.
+\item Write-Though: Nếu nó bằng 1, cơ chế ghi xuyên qua của cache sẽ được kích hoạt; Ngược lại, sử dụng cơ chế ghi trả sau.
 \item Read/Write: Nếu nó bằng 0, trang chỉ đọc; Ngược lại, trang có thể đọc và ghi.
-\item PCD và PWT: Kiểm soát cơ chế cache lên trang đó. 
-\item Page Size: Chỉ có trên bảng thư mục trang. Nó được set giá trị 1 trong trường hợp mỗi trang là 4MB thay vì 4KB (Khi xả ra phân trang mở rộng).
+\item User/Supervisor: Nếu nó bằng 1, tất cả các mức độ đặc quyền đều có quyền truy cập nó; Ngược lại, chỉ có mức độ đặc quyền 0 mới có thể sử dụng. 
+\item Page Size: Chỉ có trên bảng thư mục trang. Nó được set giá trị 1 trong trường hợp mỗi trang là 4MB thay vì 4KB (Khi xảy ra phân trang mở rộng).
 \item Global: Chỉ có trên bảng trang. Ngăn ngừa việc trang đó thường xuyên bị đẩy lên TLB (Translation Lookaside Buffers).
 \end{itemize}
+
+\begin{figure}[h]
+\centering
+\caption{Các cờ trong một phần tử của bảng trang.}
+\includegraphics[width=10cm]{pte_flags.png}
+\end{figure}
+
+
+\begin{figure}[h]
+\centering
+\caption{Các cờ trong một phần tử của bảng thư mục trang.}
+\includegraphics[width=10cm]{ptd_flags.png}
+\end{figure}
 
 \begin{figure}[h]
 \centering
